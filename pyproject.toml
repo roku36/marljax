@@ -2,10 +2,14 @@
 name = "marljax"
 version = "0.1.0"
 description = "Add your description here"
-authors = [
-    { name = "roku36", email = "roku36000@gmail.com" }
+authors = [{ name = "roku36", email = "roku36000@gmail.com" }]
+dependencies = [
+    "numpy>=1.24.4",
+    "wheel>=0.41.3",
+    "ml-dtypes==0.2.0",
+    "jax-metal>=0.0.4",
+    "jaxmarl>=0.0.2",
 ]
-dependencies = []
 readme = "README.md"
 requires-python = ">= 3.8"
 
