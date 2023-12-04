@@ -46,9 +46,8 @@ idna==3.4
 importlib-metadata==6.8.0
 importlib-resources==6.1.1
 itsdangerous==2.1.2
-jax==0.4.11
-jax-metal==0.0.4
-jaxlib==0.4.11
+jax==0.4.20
+jaxlib==0.4.20
 jaxmarl==0.0.2
 jaxopt==0.8.2
 jinja2==3.1.2
@@ -94,7 +93,7 @@ typing-extensions==4.8.0
 urllib3==2.1.0
 wandb==0.16.0
 werkzeug==3.0.1
-wheel==0.41.3
+wheel==0.42.0
 zipp==3.17.0
 # The following packages are considered to be unsafe in a requirements file:
 setuptools==69.0.0

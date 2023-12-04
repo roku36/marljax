@@ -1,21 +1,22 @@
+from typing import Any, NamedTuple, Sequence
+
+import distrax
+import flax.linen as nn
+import hydra
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
+import jaxmarl
+import matplotlib.pyplot as plt
 import numpy as np
 import optax
 from flax.linen.initializers import constant, orthogonal
-from typing import Sequence, NamedTuple, Any
 from flax.training.train_state import TrainState
-import distrax
-from gymnax.wrappers.purerl import LogWrapper, FlattenObservationWrapper
-import jaxmarl
-from jaxmarl.wrappers.baselines import LogWrapper
+from gymnax.wrappers.purerl import FlattenObservationWrapper, LogWrapper
 from jaxmarl.environments.overcooked import overcooked_layouts
 from jaxmarl.viz.overcooked_visualizer import OvercookedVisualizer
-import hydra
+from jaxmarl.wrappers.baselines import LogWrapper
 from omegaconf import OmegaConf
 
-import matplotlib.pyplot as plt
 
 class ActorCritic(nn.Module):
     action_dim: Sequence[int]
@@ -56,13 +57,14 @@ class ActorCritic(nn.Module):
 
 
 class Transition(NamedTuple):
-    done: jnp.ndarray
-    action: jnp.ndarray
-    value: jnp.ndarray
-    reward: jnp.ndarray
-    log_prob: jnp.ndarray
-    obs: jnp.ndarray
-    info: jnp.ndarray
+    done: jax.Array
+    action: jax.Array
+    value: jax.Array
+    reward: jax.Array
+    log_prob: jax.Array
+    obs: jax.Array
+    info: jax.Array
+
 
 def get_rollout(train_state, config):
     env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
@@ -91,7 +93,10 @@ def get_rollout(train_state, config):
         pi_0, _ = network.apply(network_params, obs["agent_0"])
         pi_1, _ = network.apply(network_params, obs["agent_1"])
 
-        actions = {"agent_0": pi_0.sample(seed=key_a0), "agent_1": pi_1.sample(seed=key_a1)}
+        actions = {
+            "agent_0": pi_0.sample(seed=key_a0),
+            "agent_1": pi_1.sample(seed=key_a1),
+        }
         # env_act = unbatchify(action, env.agents, config["NUM_ENVS"], env.num_agents)
         # env_act = {k: v.flatten() for k, v in env_act.items()}
 
@@ -103,6 +108,7 @@ def get_rollout(train_state, config):
 
     return state_seq
 
+
 def batchify(x: dict, agent_list, num_actors):
     x = jnp.stack([x[a] for a in agent_list])
     return x.reshape((num_actors, -1))
@@ -111,6 +117,7 @@ def batchify(x: dict, agent_list, num_actors):
 def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
     x = x.reshape((num_actors, num_envs, -1))
     return {a: x[i] for i, a in enumerate(agent_list)}
+
 
 def make_train(config):
     env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
@@ -126,11 +133,14 @@ def make_train(config):
     env = LogWrapper(env)
 
     def linear_schedule(count):
-        frac = 1.0 - (count // (config["NUM_MINIBATCHES"] * config["UPDATE_EPOCHS"])) / config["NUM_UPDATES"]
+        frac = (
+            1.0
+            - (count // (config["NUM_MINIBATCHES"] * config["UPDATE_EPOCHS"]))
+            / config["NUM_UPDATES"]
+        )
         return config["LR"] * frac
 
     def train(rng):
-
         # INIT NETWORK
         network = ActorCritic(env.action_space().n, activation=config["ACTIVATION"])
         rng, _rng = jax.random.split(rng)
@@ -145,7 +155,10 @@ def make_train(config):
                 optax.adam(learning_rate=linear_schedule, eps=1e-5),
             )
         else:
-            tx = optax.chain(optax.clip_by_global_norm(config["MAX_GRAD_NORM"]), optax.adam(config["LR"], eps=1e-5))
+            tx = optax.chain(
+                optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),
+                optax.adam(config["LR"], eps=1e-5),
+            )
         train_state = TrainState.create(
             apply_fn=network.apply,
             params=network_params,
@@ -171,17 +184,19 @@ def make_train(config):
                 pi, value = network.apply(train_state.params, obs_batch)
                 action = pi.sample(seed=_rng)
                 log_prob = pi.log_prob(action)
-                env_act = unbatchify(action, env.agents, config["NUM_ENVS"], env.num_agents)
+                env_act = unbatchify(
+                    action, env.agents, config["NUM_ENVS"], env.num_agents
+                )
 
-                env_act = {k:v.flatten() for k,v in env_act.items()}
+                env_act = {k: v.flatten() for k, v in env_act.items()}
 
                 # STEP ENV
                 rng, _rng = jax.random.split(rng)
                 rng_step = jax.random.split(_rng, config["NUM_ENVS"])
 
-                obsv, env_state, reward, done, info = jax.vmap(env.step, in_axes=(0,0,0))(
-                    rng_step, env_state, env_act
-                )
+                obsv, env_state, reward, done, info = jax.vmap(
+                    env.step, in_axes=(0, 0, 0)
+                )(rng_step, env_state, env_act)
                 info = jax.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
                 transition = Transition(
                     batchify(done, env.agents, config["NUM_ACTORS"]).squeeze(),
@@ -190,8 +205,7 @@ def make_train(config):
                     batchify(reward, env.agents, config["NUM_ACTORS"]).squeeze(),
                     log_prob,
                     obs_batch,
-                    info
-
+                    info,
                 )
                 runner_state = (train_state, env_state, obsv, rng)
                 return runner_state, transition
@@ -326,4 +340,3 @@ def make_train(config):
         return {"runner_state": runner_state, "metrics": metric}
 
     return train
-
